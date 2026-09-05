@@ -13,11 +13,16 @@
 		<Compile Include="..\IINACT\ParserWatchdog.cs" Link="ParserWatchdog.cs" />
 		<Compile Include="..\IINACT\LogLineTypes.cs" Link="LogLineTypes.cs" />
 		<Compile Include="..\IINACT\DiagLog.cs" Link="DiagLog.cs" />
+		<Compile Include="..\OverlayPlugin.Core\EventDispatcher.cs" Link="OverlayPlugin\EventDispatcher.cs" />
+		<Compile Include="..\OverlayPlugin.Core\IEventReceiver.cs" Link="OverlayPlugin\IEventReceiver.cs" />
+		<Compile Include="..\OverlayPlugin.Core\EventSources\CactbotStateEvents.cs" Link="OverlayPlugin\CactbotStateEvents.cs" />
+		<Compile Include="..\OverlayPlugin.Common\ILogger.cs" Link="OverlayPlugin\ILogger.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
 		<PackageReference Include="xunit" Version="2.9.2" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
 	</ItemGroup>
 
