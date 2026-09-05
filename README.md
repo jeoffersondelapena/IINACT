@@ -9,6 +9,16 @@ The data source here is only based on [Unscrambler](https://github.com/perchbird
 This will **not** render overlays by itself, use something like [Browsingway](https://github.com/Styr1x/Browsingway), [Next UI](https://github.com/kaminaris/Next-UI), [hudkit](https://github.com/valarnin/hudkit) (Linux only) or [Bunny HUD](https://github.com/marzent/Bunny-HUD) (macOS only) to display Overlays.
 
 
+## This fork (macOS)
+
+Under XIV on Mac the parser occasionally stops mid-session: the memory-scan thread stops consuming
+frame refreshes (or combat continues with no network-derived lines), the overlays freeze on stale data
+and only a plugin reload brings them back. This branch adds a watchdog that detects both conditions,
+reloads the plugin through Dalamud, and reports what happened in chat, plus `/iinact status`,
+`/iinact restart` and `/iinact autorestart on|off`. The scan loop also records which
+FFXIV_ACT_Plugin call it is inside, so a stall names the culprit in the log. Tests live in
+`IINACT.Tests` (`dotnet test IINACT.Tests`).
+
 ## Why
 
 - ACT is too inconvenient IMHO for just wanting to have the game data parsed and served via a WebSocket server
