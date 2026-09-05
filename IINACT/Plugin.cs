@@ -333,16 +333,25 @@ public sealed class Plugin : IDalamudPlugin
 
     // A meter page that lost the websocket while the parser was away does not re-subscribe when it
     // returns; at a cold boot the pages load after the server anyway.
+    // Browsingway may still be loading; without it, fall back to the config.
     private int? BrowsingwayPort()
     {
-        try
+        var subscriber = PluginInterface.GetIpcSubscriber<int>("Browsingway.Port");
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (true)
         {
-            var port = PluginInterface.GetIpcSubscriber<int>("Browsingway.Port").InvokeFunc();
-            return port > 0 ? port : null;
-        }
-        catch (Dalamud.Plugin.Ipc.Exceptions.IpcNotReadyError)
-        {
-            return null;
+            try
+            {
+                var port = subscriber.InvokeFunc();
+                if (port > 0)
+                    return port;
+            }
+            catch (Dalamud.Plugin.Ipc.Exceptions.IpcNotReadyError)
+            {
+            }
+            if (DateTime.UtcNow >= deadline)
+                return null;
+            Thread.Sleep(500);
         }
     }
 
