@@ -186,6 +186,19 @@ namespace RainbowMage.OverlayPlugin.EventSources
         public override void Start()
         {
             this.timer.Change(0, this.Config.UpdateInterval * 1000);
+            ReplayCurrentState();
+        }
+
+        private void ReplayCurrentState()
+        {
+            if (repository == null)
+                return;
+            var zone = StartupReplay.ChangeZone(repository.GetCurrentTerritoryID(), ActGlobals.oFormActMain.CurrentZone);
+            if (zone != null)
+                DispatchAndCacheEvent(zone);
+            var player = StartupReplay.ChangePrimaryPlayer(repository.GetPlayerID(), repository.GetPlayerName());
+            if (player != null)
+                DispatchAndCacheEvent(player);
         }
 
         protected override void Update() { }
