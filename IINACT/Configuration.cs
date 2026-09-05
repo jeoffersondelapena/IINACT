@@ -68,6 +68,12 @@ public class Configuration : IPluginConfiguration
 
     public int TtsPlaybackDevice { get; set; } = -1;
 
+    public bool AutoRestart { get; set; } = true;
+
+    public DateTime? LastAutoRestart { get; set; }
+
+    public string? LastRestartReason { get; set; }
+
     public void Initialize(IDalamudPluginInterface pluginInterface)
     {
         PluginInterface = pluginInterface;

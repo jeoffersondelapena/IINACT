@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using Dalamud.Game;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Windowing;
@@ -48,6 +49,11 @@ public sealed class Plugin : IDalamudPlugin
     internal string OverlayPluginStatus => OverlayPlugin.Status;
     private PluginLogTraceListener PluginLogTraceListener { get; }
     private HttpClient HttpClient { get; }
+
+    private readonly Stopwatch uptime = Stopwatch.StartNew();
+    private long lastWatchdogTick;
+    private double combatSince = -1;
+    private bool restartRequested;
 
     public Plugin(IDalamudPluginInterface pluginInterface,
                   ICommandManager commandManager,
@@ -115,7 +121,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(MainWindowCommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Displays the IINACT main window"
+            HelpMessage = "Displays the IINACT main window; also: status, restart, autorestart on|off, ws start|stop, log start|stop"
         });
 
         CommandManager.AddHandler(EndEncCommandName, new CommandInfo(OnCommand)
@@ -135,10 +141,14 @@ public sealed class Plugin : IDalamudPlugin
         ClientState.LeavePvP += LeavePvP;
 
         ZoneDownHookManager = createZoneDownHookManager.Result;
+
+        Framework.Update += WatchdogTick;
+        AnnounceRestart();
     }
 
     public void Dispose()
     {
+        Framework.Update -= WatchdogTick;
         ClientState.EnterPvP -= EnterPvP;
         ClientState.LeavePvP -= LeavePvP;
         IpcProviders.Dispose();
@@ -226,6 +236,21 @@ public sealed class Plugin : IDalamudPlugin
                 Configuration.DisablePvp = true;
                 Configuration.Save();
                 break;
+            case "restart":
+                RestartParser("requested");
+                break;
+            case "status":
+                ChatGui.Print($"IINACT: scan thread {FfxivActPluginWrapper.ScanPhase}, "
+                              + $"{FfxivActPluginWrapper.PendingRefreshes} pending refreshes, "
+                              + $"last network line {FfxivActPluginWrapper.SecondsSinceNetworkLine:F0}s ago, "
+                              + $"auto-restart {(Configuration.AutoRestart ? "on" : "off")}.");
+                break;
+            case "autorestart on":
+            case "autorestart off":
+                Configuration.AutoRestart = args.EndsWith("on");
+                Configuration.Save();
+                ChatGui.Print($"IINACT: automatic parser restart {(Configuration.AutoRestart ? "on" : "off")}.");
+                break;
             default:
                 MainWindow.IsOpen = true;
                 break;
@@ -246,6 +271,78 @@ public sealed class Plugin : IDalamudPlugin
     internal void SetChatMessageLoggingEnabled(bool enabled)
     {
         FfxivActPluginWrapper.SetChatMessageLoggingEnabled(enabled);
+    }
+
+    private void WatchdogTick(IFramework framework)
+    {
+        var now = Environment.TickCount64;
+        if (now - lastWatchdogTick < 1000)
+            return;
+        lastWatchdogTick = now;
+
+        var inCombat = Condition[ConditionFlag.InCombat];
+        if (!inCombat)
+            combatSince = -1;
+        else if (combatSince < 0)
+            combatSince = uptime.Elapsed.TotalSeconds;
+
+        var sample = new WatchdogSample(
+            FfxivActPluginWrapper.PendingRefreshes,
+            inCombat,
+            inCombat ? uptime.Elapsed.TotalSeconds - combatSince : 0,
+            FfxivActPluginWrapper.SecondsSinceNetworkLine,
+            uptime.Elapsed.TotalSeconds);
+        var kind = ParserWatchdog.Evaluate(sample);
+        if (kind == StallKind.None || !Configuration.AutoRestart || restartRequested)
+            return;
+
+        var reason = ParserWatchdog.Describe(kind, FfxivActPluginWrapper.ScanPhase);
+        Log.Warning($"[Watchdog] {reason}: {sample.PendingRefreshes} pending refreshes, "
+                    + $"{sample.SecondsInCombat:F0}s in combat, {sample.SecondsSinceNetworkLine:F0}s since the last network line, "
+                    + $"territory {ClientState.TerritoryType}");
+        RestartParser(reason);
+    }
+
+    private void RestartParser(string reason)
+    {
+        restartRequested = true;
+        ChatGui.Print($"IINACT: parser stalled ({reason}) - restarting.");
+        Configuration.LastAutoRestart = DateTime.UtcNow;
+        Configuration.LastRestartReason = reason;
+        Configuration.Save();
+        Task.Run(async () =>
+        {
+            try
+            {
+                await PluginReloader.Reload(PluginInterface, "IINACT");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "[Watchdog] reload failed");
+                restartRequested = false;
+                Configuration.LastAutoRestart = null;
+                Configuration.Save();
+                try
+                {
+                    ChatGui.PrintError("IINACT: automatic restart failed - run /xldisableplugintemp IINACT, then /xlenableplugintemp IINACT.");
+                }
+                catch (Exception)
+                {
+                    // The plugin may already be half unloaded; the log line above is what survives.
+                }
+            }
+        });
+    }
+
+    private void AnnounceRestart()
+    {
+        if (Configuration.LastAutoRestart is not { } when || DateTime.UtcNow - when > TimeSpan.FromMinutes(3))
+            return;
+        ChatGui.Print($"IINACT: parser restarted ({Configuration.LastRestartReason}). "
+                      + "Overlays reconnect on their own; use the Restart overlays macro if one stays blank.");
+        Configuration.LastAutoRestart = null;
+        Configuration.LastRestartReason = null;
+        Configuration.Save();
     }
 
     private void EnterPvP()
