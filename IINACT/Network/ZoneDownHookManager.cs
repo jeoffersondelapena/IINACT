@@ -47,6 +47,7 @@ public unsafe class ZoneDownHookManager : IDisposable
         else
         {
             Plugin.Log.Warning("[ZoneDownHookManager] Creating fallback Unscrambler constants dynamically");
+            Plugin.Diag?.Write($"unscrambler: no constants for game version {version}; deriving them at runtime");
             var onReceivePacketAddress = PacketDispatcher.GetOnReceivePacketAddress();
             Plugin.Log.Debug($"[ZoneDownHookManager] GetOnReceivePacketAddress: {onReceivePacketAddress:X}");
             var opcodeKeyTableIns = MultiSigScanner.Scan(onReceivePacketAddress, 0x1000, OpcodeKeyTableSignature);
@@ -172,6 +173,7 @@ public unsafe class ZoneDownHookManager : IDisposable
 	    catch (Exception e)
 	    {
             Plugin.Log.Error(e, "[PacketsFromFrame] Error!");
+            Plugin.Diag?.Write($"packet hook error: {e.GetType().Name}: {e.Message}");
 	    }
 
         return ret;
@@ -195,6 +197,7 @@ public unsafe class ZoneDownHookManager : IDisposable
         if (header.Compression != CompressionType.None)
         {
             SendNotification($"A frame was compressed.");
+            Plugin.Diag?.Write("packet hook: compressed frame skipped");
             return;
         }
         
@@ -239,7 +242,7 @@ public unsafe class ZoneDownHookManager : IDisposable
         queue?.Enqueue((GameServerTime.LastSeverTimestamp, data.ToArray()));
     }
     
-    private static string GetRunningGameVersion()
+    internal static string GetRunningGameVersion()
     {
         var path = Environment.ProcessPath!;
         var parent = Directory.GetParent(path)!.FullName;
