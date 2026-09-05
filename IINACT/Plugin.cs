@@ -35,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     internal ISigScanner SigScanner { get; }
     internal INotificationManager NotificationManager { get; }
     public static IPluginLog Log { get; private set; } = null!;
+    public static DiagLog? Diag { get; private set; }
 
     internal Configuration Configuration { get; }
     private TextToSpeechProvider TextToSpeechProvider { get; }
@@ -52,6 +53,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly Stopwatch uptime = Stopwatch.StartNew();
     private long lastWatchdogTick;
+    private long lastHeartbeat;
     private double combatSince = -1;
     private bool restartRequested;
 
@@ -78,6 +80,7 @@ public sealed class Plugin : IDalamudPlugin
         SigScanner = sigScanner;
         NotificationManager = notificationManager;
         Log = pluginLog;
+        Diag = OpenDiagLog();
 
         OpcodeManager.Instance.SetRegion(DataManager.Language.ToString() == "ChineseSimplified"
                                              ? GameRegion.Chinese
@@ -110,6 +113,8 @@ public sealed class Plugin : IDalamudPlugin
         Advanced_Combat_Tracker.ActGlobals.oFormActMain.LogFilePath = Configuration.LogFilePath;
 
         FfxivActPluginWrapper = new FfxivActPluginWrapper(Configuration, DataManager.Language, ChatGui, Framework, Condition);
+        Diag?.Write($"IINACT {Version} (fork) on FFXIV_ACT_Plugin {typeof(FFXIV_ACT_Plugin.FFXIV_ACT_Plugin).Assembly.GetName().Version}, "
+                    + $"game {ZoneDownHookManager.GetRunningGameVersion()}, pid {Environment.ProcessId}, territory {ClientState.TerritoryType}");
         Task.Run(() => NetworkLogCleanup.Cleanup(Configuration));
         OverlayPlugin = InitOverlayPlugin();
 
@@ -121,7 +126,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(MainWindowCommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Displays the IINACT main window; also: status, restart, autorestart on|off, ws start|stop, log start|stop"
+            HelpMessage = "Displays the IINACT main window; also: status, dump, restart, autorestart on|off, ws start|stop, log start|stop"
         });
 
         CommandManager.AddHandler(EndEncCommandName, new CommandInfo(OnCommand)
@@ -143,12 +148,44 @@ public sealed class Plugin : IDalamudPlugin
         ZoneDownHookManager = createZoneDownHookManager.Result;
 
         Framework.Update += WatchdogTick;
+        ClientState.TerritoryChanged += OnTerritoryChanged;
+        Condition.ConditionChange += OnConditionChange;
         AnnounceRestart();
+    }
+
+    private DiagLog? OpenDiagLog()
+    {
+        try
+        {
+            DateTime started;
+            try { started = Process.GetCurrentProcess().StartTime; }
+            catch (Exception) { started = DateTime.Now; }
+            return new DiagLog(Path.Combine(PluginInterface.ConfigDirectory.FullName, "diag"), started, Environment.ProcessId);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "diagnostic log unavailable");
+            return null;
+        }
+    }
+
+    private void OnTerritoryChanged(uint territory)
+    {
+        Diag?.Write($"territory {territory}; {FfxivActPluginWrapper.Summary()}");
+    }
+
+    private void OnConditionChange(ConditionFlag flag, bool value)
+    {
+        if (flag == ConditionFlag.InCombat)
+            Diag?.Write($"combat {(value ? "started" : "ended")}; {FfxivActPluginWrapper.Summary()}");
     }
 
     public void Dispose()
     {
         Framework.Update -= WatchdogTick;
+        ClientState.TerritoryChanged -= OnTerritoryChanged;
+        Condition.ConditionChange -= OnConditionChange;
+        Diag?.Write("plugin unloading");
         ClientState.EnterPvP -= EnterPvP;
         ClientState.LeavePvP -= LeavePvP;
         IpcProviders.Dispose();
@@ -166,6 +203,8 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(EndEncCommandName);
 
         Advanced_Combat_Tracker.ActGlobals.Dispose();
+        Diag?.Dispose();
+        Diag = null;
     }
 
     private RainbowMage.OverlayPlugin.PluginMain InitOverlayPlugin()
@@ -240,10 +279,12 @@ public sealed class Plugin : IDalamudPlugin
                 RestartParser("requested");
                 break;
             case "status":
-                ChatGui.Print($"IINACT: scan thread {FfxivActPluginWrapper.ScanPhase}, "
-                              + $"{FfxivActPluginWrapper.PendingRefreshes} pending refreshes, "
-                              + $"last network line {FfxivActPluginWrapper.SecondsSinceNetworkLine:F0}s ago, "
-                              + $"auto-restart {(Configuration.AutoRestart ? "on" : "off")}.");
+                ChatGui.Print($"IINACT: {FfxivActPluginWrapper.Summary()}; auto-restart {(Configuration.AutoRestart ? "on" : "off")}.");
+                break;
+            case "dump":
+                Diag?.Write($"dump requested: {FfxivActPluginWrapper.Summary()}; overlay plugin '{OverlayPlugin.Status}'; "
+                            + $"in combat {Condition[ConditionFlag.InCombat]}; territory {ClientState.TerritoryType}; uptime {uptime.Elapsed.TotalSeconds:F0}s");
+                ChatGui.Print(Diag is null ? "IINACT: no diagnostic log is open." : $"IINACT: diagnostics written to {Diag.Path}");
                 break;
             case "autorestart on":
             case "autorestart off":
@@ -292,6 +333,12 @@ public sealed class Plugin : IDalamudPlugin
             inCombat ? uptime.Elapsed.TotalSeconds - combatSince : 0,
             FfxivActPluginWrapper.SecondsSinceNetworkLine,
             uptime.Elapsed.TotalSeconds);
+        if (now - lastHeartbeat >= 60_000)
+        {
+            lastHeartbeat = now;
+            Diag?.Write($"heartbeat: {FfxivActPluginWrapper.Summary()}; in combat {inCombat}; territory {ClientState.TerritoryType}");
+        }
+
         var kind = ParserWatchdog.Evaluate(sample);
         if (kind == StallKind.None || !Configuration.AutoRestart || restartRequested)
             return;
@@ -300,12 +347,14 @@ public sealed class Plugin : IDalamudPlugin
         Log.Warning($"[Watchdog] {reason}: {sample.PendingRefreshes} pending refreshes, "
                     + $"{sample.SecondsInCombat:F0}s in combat, {sample.SecondsSinceNetworkLine:F0}s since the last network line, "
                     + $"territory {ClientState.TerritoryType}");
+        Diag?.Write($"watchdog: {reason}; {FfxivActPluginWrapper.Summary()}; {sample.SecondsInCombat:F0}s in combat");
         RestartParser(reason);
     }
 
     private void RestartParser(string reason)
     {
         restartRequested = true;
+        Diag?.Write($"restart requested: {reason}");
         ChatGui.Print($"IINACT: parser stalled ({reason}) - restarting.");
         Configuration.LastAutoRestart = DateTime.UtcNow;
         Configuration.LastRestartReason = reason;
@@ -319,6 +368,7 @@ public sealed class Plugin : IDalamudPlugin
             catch (Exception ex)
             {
                 Log.Error(ex, "[Watchdog] reload failed");
+                Diag?.Write($"restart FAILED: {ex.GetType().Name}: {ex.Message}");
                 restartRequested = false;
                 Configuration.LastAutoRestart = null;
                 Configuration.Save();
@@ -338,6 +388,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (Configuration.LastAutoRestart is not { } when || DateTime.UtcNow - when > TimeSpan.FromMinutes(3))
             return;
+        Diag?.Write($"back after an automatic restart ({Configuration.LastRestartReason})");
         ChatGui.Print($"IINACT: parser restarted ({Configuration.LastRestartReason}). "
                       + "Overlays reconnect on their own; use the Restart overlays macro if one stays blank.");
         Configuration.LastAutoRestart = null;

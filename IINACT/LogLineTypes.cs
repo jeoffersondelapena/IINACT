@@ -5,6 +5,9 @@ public static class LogLineTypes
     // FFXIV_ACT_Plugin numbers its packet-derived lines 20 and up; 40 (map) comes from memory.
     public static bool IsNetworkType(int type) => type is >= 20 and <= 42 && type != 40;
 
+    // Zone, primary player, combatant add/remove, player stats and map all come from the memory scan.
+    public static bool IsMemoryType(int type) => type is >= 1 and <= 4 || type is 12 or 40;
+
     /// <summary>The numeric line type, tolerating ACT's optional "[time] " prefix; null if malformed.</summary>
     public static int? TypeOf(string line)
     {

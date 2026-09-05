@@ -54,6 +54,8 @@ public partial class FfxivActPluginWrapper : IDisposable
     private readonly CancellationTokenSource cancellationTokenSource;
     private volatile string scanPhase = "not started";
     private long lastNetworkLineTicks;
+    private long lastMemoryLineTicks;
+    private static readonly RepeatThrottle exceptionThrottle = new(TimeSpan.FromSeconds(60));
 
     private readonly ILogOutput logOutput;
     private readonly ILogFormat logFormat;
@@ -65,8 +67,22 @@ public partial class FfxivActPluginWrapper : IDisposable
     /// <summary>Frame refreshes the scan thread has not consumed; grows without bound once it is dead.</summary>
     public int PendingRefreshes => refreshSemaphore.CurrentCount;
 
-    public double SecondsSinceNetworkLine =>
-        lastNetworkLineTicks == 0 ? double.PositiveInfinity : (Environment.TickCount64 - lastNetworkLineTicks) / 1000.0;
+    public double SecondsSinceNetworkLine => Age(lastNetworkLineTicks);
+
+    public double SecondsSinceMemoryLine => Age(lastMemoryLineTicks);
+
+    public int MachinaQueueLength => Machina.FFXIV.Dalamud.DalamudClient.MessageQueue?.Count ?? -1;
+
+    public string ScanThreadState => scanThread.IsAlive ? scanThread.ThreadState.ToString() : "dead";
+
+    private static double Age(long ticks) => ticks == 0 ? double.PositiveInfinity : (Environment.TickCount64 - ticks) / 1000.0;
+
+    /// <summary>One line summarising everything the watchdog and a human would want at a glance.</summary>
+    public string Summary() =>
+        $"scan thread {ScanThreadState} in '{scanPhase}', {PendingRefreshes} pending refreshes, "
+        + $"memory line {SecondsSinceMemoryLine:F0}s ago, network line {SecondsSinceNetworkLine:F0}s ago, "
+        + $"machina queue {MachinaQueueLength}, parser zone {zoneMapProcessor.ZoneID}, "
+        + $"player pointer {(mobArrayProcessor.PrimaryPlayerPointer == nint.Zero ? "null" : "set")}";
 
     public DataCollectionSettingsEventArgs DataCollectionSettings = null!;
     public ParseSettings ParseSettings = null!;
@@ -258,6 +274,8 @@ public partial class FfxivActPluginWrapper : IDisposable
         var type = logInfo.detectedType > 0 ? logInfo.detectedType : LogLineTypes.TypeOf(logInfo.logLine) ?? 0;
         if (LogLineTypes.IsNetworkType(type))
             lastNetworkLineTicks = Environment.TickCount64;
+        else if (LogLineTypes.IsMemoryType(type))
+            lastMemoryLineTicks = Environment.TickCount64;
     }
 
     private void SetupDataSubscription()
@@ -273,6 +291,8 @@ public partial class FfxivActPluginWrapper : IDisposable
     private static void OnProcessException(DateTime timestamp, string text)
     {
         Plugin.Log.Debug($"[FFXIV_ACT_Plugin] {text}");
+        if (exceptionThrottle.Admit(text, DateTime.Now) is { } line)
+            Plugin.Diag?.Write($"[FFXIV_ACT_Plugin] {line}");
     }
 
     [SuppressGCTransition]
@@ -355,11 +375,13 @@ public partial class FfxivActPluginWrapper : IDisposable
             }
             catch (Exception ex) when (ex is ThreadAbortException or OperationCanceledException or ObjectDisposedException)
             {
+                Plugin.Diag?.Write("scan thread stopping (parser shutting down)");
                 return;
             }
             catch (Exception ex)
             {
                 Plugin.Log.Error(ex, "[FFXIV_ACT_Plugin] ScanMemory failure");
+                Plugin.Diag?.Write($"scan thread error in '{scanPhase}': {ex.GetType().Name}: {ex.Message}");
             }
         }
     }
