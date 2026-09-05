@@ -123,7 +123,7 @@ public sealed class Plugin : IDalamudPlugin
         IpcProviders = new IpcProviders(PluginInterface)
         {
             // Not healthy until the start-up follow-ups ran, so a caller waiting on it prints last.
-            Healthy = () => startupSettled && ParserWatchdog.Evaluate(Sample()) == StallKind.None,
+            Healthy = () => !restartRequested && startupSettled && ParserWatchdog.Evaluate(Sample()) == StallKind.None,
             Status = () => FfxivActPluginWrapper.Summary(),
             Restart = reason =>
             {
