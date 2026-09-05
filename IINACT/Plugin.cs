@@ -57,6 +57,7 @@ public sealed class Plugin : IDalamudPlugin
     private double combatSince = -1;
     private bool restartRequested;
     private volatile bool startupSettled;
+    private int rebinding;
 
     public Plugin(IDalamudPluginInterface pluginInterface,
                   ICommandManager commandManager,
@@ -161,6 +162,7 @@ public sealed class Plugin : IDalamudPlugin
         ZoneDownHookManager = createZoneDownHookManager.Result;
 
         Framework.Update += WatchdogTick;
+        PluginInterface.ActivePluginsChanged += OnActivePluginsChanged;
         ClientState.TerritoryChanged += OnTerritoryChanged;
         Condition.ConditionChange += OnConditionChange;
         AnnounceRestart();
@@ -196,6 +198,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         Framework.Update -= WatchdogTick;
+        PluginInterface.ActivePluginsChanged -= OnActivePluginsChanged;
         ClientState.TerritoryChanged -= OnTerritoryChanged;
         Condition.ConditionChange -= OnConditionChange;
         Diag?.Write("plugin unloading");
@@ -360,6 +363,11 @@ public sealed class Plugin : IDalamudPlugin
         if (!ClientState.IsLoggedIn)
             return;
         Thread.Sleep(2000);
+        RequestOverlayPageReload();
+    }
+
+    private void RequestOverlayPageReload()
+    {
         try
         {
             var reload = PluginInterface.GetIpcSubscriber<bool>("Browsingway.ReloadOverlays");
@@ -374,6 +382,36 @@ public sealed class Plugin : IDalamudPlugin
             Log.Warning(ex, "overlay page reload failed");
             Diag?.Write($"overlay page reload failed: {ex.Message}");
         }
+    }
+
+    // If this server started before Browsingway (config port), follow Browsingway's port once it appears.
+    private void OnActivePluginsChanged(IActivePluginsChangedEventArgs args)
+    {
+        if (!args.AffectedInternalNames.Contains("Browsingway") || Interlocked.Exchange(ref rebinding, 1) != 0)
+            return;
+        Task.Run(() =>
+        {
+            try
+            {
+                var wanted = BrowsingwayPort();
+                var bound = WebSocketServer?.Port;
+                if (WebSocketServer is null || !RainbowMage.OverlayPlugin.WebSocket.WsPort.NeedsRebind(bound, wanted))
+                    return;
+                Diag?.Write($"Browsingway is on port {wanted} but the server is on {bound}; rebinding");
+                WebSocketServer.Restart();
+                ChatGui.Print($"IINACT: moved the websocket server to port {wanted} to match this window's overlays.");
+                RequestOverlayPageReload();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "port rebind failed");
+                Diag?.Write($"port rebind failed: {ex.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref rebinding, 0);
+            }
+        });
     }
 
     private void WatchdogTick(IFramework framework)
