@@ -21,6 +21,14 @@ internal class IpcProviders : IDisposable
     internal readonly ICallGateProvider<string> GetServerIp;
     internal readonly ICallGateProvider<bool> GetServerSslEnabled;
     internal readonly ICallGateProvider<Uri?> GetServerUri;
+
+    // Health and restart for an outside caller (Overlay Doctor); the plugin fills these in.
+    internal readonly ICallGateProvider<bool> GetHealthy;
+    internal readonly ICallGateProvider<string> GetStatus;
+    internal readonly ICallGateProvider<string, bool> RequestRestart;
+    public Func<bool> Healthy { get; set; } = () => false;
+    public Func<string> Status { get; set; } = () => "not ready";
+    public Func<string, bool> Restart { get; set; } = _ => false;
     
     internal IpcProviders(IDalamudPluginInterface pluginInterface)
     {
@@ -36,6 +44,10 @@ internal class IpcProviders : IDisposable
         GetServerIp = pluginInterface.GetIpcProvider<string>("IINACT.Server.Ip");
         GetServerSslEnabled = pluginInterface.GetIpcProvider<bool>("IINACT.Server.SslEnabled");
         GetServerUri = pluginInterface.GetIpcProvider<Uri?>("IINACT.Server.Uri");
+
+        GetHealthy = pluginInterface.GetIpcProvider<bool>("IINACT.Healthy");
+        GetStatus = pluginInterface.GetIpcProvider<string>("IINACT.Status");
+        RequestRestart = pluginInterface.GetIpcProvider<string, bool>("IINACT.Restart");
         
         Register();
     }
@@ -54,6 +66,10 @@ internal class IpcProviders : IDisposable
         GetServerIp.RegisterFunc(() => Server?.Address ?? "");
         GetServerSslEnabled.RegisterFunc(() => Server?.Secure ?? false);
         GetServerUri.RegisterFunc(() => Server?.Uri);
+
+        GetHealthy.RegisterFunc(() => Healthy());
+        GetStatus.RegisterFunc(() => Status());
+        RequestRestart.RegisterFunc(reason => Restart(reason));
     }
 
     public void Dispose()
@@ -70,5 +86,9 @@ internal class IpcProviders : IDisposable
         GetServerIp.UnregisterFunc();
         GetServerSslEnabled.UnregisterFunc();
         GetServerUri.UnregisterFunc();
+
+        GetHealthy.UnregisterFunc();
+        GetStatus.UnregisterFunc();
+        RequestRestart.UnregisterFunc();
     }
 }
