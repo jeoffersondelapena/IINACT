@@ -17,7 +17,8 @@ and only a plugin reload brings them back. This branch adds a watchdog that dete
 reloads the plugin through Dalamud, and reports what happened in chat, plus `/iinact status`,
 `/iinact restart` and `/iinact autorestart on|off`. The scan loop also records which
 FFXIV_ACT_Plugin call it is inside, so a stall names the culprit in the log. Tests live in
-`IINACT.Tests` (`dotnet test IINACT.Tests`).
+`IINACT.Tests` (`dotnet test IINACT.Tests`); they run before every commit once the versioned hook is
+enabled with `git config core.hooksPath .githooks`.
 
 ## Why
 
