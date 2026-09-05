@@ -231,6 +231,7 @@ public sealed class Plugin : IDalamudPlugin
         container.Register(HttpClient);
         container.Register(FileDialogManager);
         container.Register(PluginInterface);
+        container.Register(new RainbowMage.OverlayPlugin.WebSocket.WsPortSource(BrowsingwayPort));
 
         var overlayPlugin = new RainbowMage.OverlayPlugin.PluginMain(
             PluginInterface.AssemblyLocation.Directory!.FullName, logger, container);
@@ -249,6 +250,7 @@ public sealed class Plugin : IDalamudPlugin
             IpcProviders.OverlayIpcHandler = container.Resolve<RainbowMage.OverlayPlugin.Handlers.Ipc.IpcHandlerController>();
             MainWindow.OverlayPluginConfig = container.Resolve<RainbowMage.OverlayPlugin.IPluginConfig>();
             MainWindow.OverlayPluginEventConfig = container.Resolve<RainbowMage.OverlayPlugin.EventSources.BuiltinEventConfig>();
+            Diag?.Write($"websocket server {(WebSocketServer?.Running == true ? "listening" : "NOT running")} on port {WebSocketServer?.Port}");
             RefreshOverlayPagesIfMidSession();
             startupSettled = true;
         });
@@ -331,6 +333,19 @@ public sealed class Plugin : IDalamudPlugin
 
     // A meter page that lost the websocket while the parser was away does not re-subscribe when it
     // returns; at a cold boot the pages load after the server anyway.
+    private int? BrowsingwayPort()
+    {
+        try
+        {
+            var port = PluginInterface.GetIpcSubscriber<int>("Browsingway.Port").InvokeFunc();
+            return port > 0 ? port : null;
+        }
+        catch (Dalamud.Plugin.Ipc.Exceptions.IpcNotReadyError)
+        {
+            return null;
+        }
+    }
+
     private void RefreshOverlayPagesIfMidSession()
     {
         if (!ClientState.IsLoggedIn)
