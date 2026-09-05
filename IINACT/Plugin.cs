@@ -118,7 +118,18 @@ public sealed class Plugin : IDalamudPlugin
         Task.Run(() => NetworkLogCleanup.Cleanup(Configuration));
         OverlayPlugin = InitOverlayPlugin();
 
-        IpcProviders = new IpcProviders(PluginInterface);
+        IpcProviders = new IpcProviders(PluginInterface)
+        {
+            Healthy = () => ParserWatchdog.Evaluate(Sample()) == StallKind.None,
+            Status = () => FfxivActPluginWrapper.Summary(),
+            Restart = reason =>
+            {
+                if (restartRequested)
+                    return false;
+                RestartParser(reason);
+                return true;
+            },
+        };
 
         MainWindow = new MainWindow(this);
 
@@ -321,18 +332,8 @@ public sealed class Plugin : IDalamudPlugin
             return;
         lastWatchdogTick = now;
 
-        var inCombat = Condition[ConditionFlag.InCombat];
-        if (!inCombat)
-            combatSince = -1;
-        else if (combatSince < 0)
-            combatSince = uptime.Elapsed.TotalSeconds;
-
-        var sample = new WatchdogSample(
-            FfxivActPluginWrapper.PendingRefreshes,
-            inCombat,
-            inCombat ? uptime.Elapsed.TotalSeconds - combatSince : 0,
-            FfxivActPluginWrapper.SecondsSinceNetworkLine,
-            uptime.Elapsed.TotalSeconds);
+        var sample = Sample();
+        var inCombat = sample.InCombat;
         if (now - lastHeartbeat >= 60_000)
         {
             lastHeartbeat = now;
@@ -349,6 +350,22 @@ public sealed class Plugin : IDalamudPlugin
                     + $"territory {ClientState.TerritoryType}");
         Diag?.Write($"watchdog: {reason}; {FfxivActPluginWrapper.Summary()}; {sample.SecondsInCombat:F0}s in combat");
         RestartParser(reason);
+    }
+
+    private WatchdogSample Sample()
+    {
+        var inCombat = Condition[ConditionFlag.InCombat];
+        if (!inCombat)
+            combatSince = -1;
+        else if (combatSince < 0)
+            combatSince = uptime.Elapsed.TotalSeconds;
+
+        return new WatchdogSample(
+            FfxivActPluginWrapper.PendingRefreshes,
+            inCombat,
+            inCombat ? uptime.Elapsed.TotalSeconds - combatSince : 0,
+            FfxivActPluginWrapper.SecondsSinceNetworkLine,
+            uptime.Elapsed.TotalSeconds);
     }
 
     private void RestartParser(string reason)
