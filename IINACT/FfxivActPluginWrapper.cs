@@ -52,10 +52,21 @@ public partial class FfxivActPluginWrapper : IDisposable
 
     private readonly Thread scanThread;
     private readonly CancellationTokenSource cancellationTokenSource;
+    private volatile string scanPhase = "not started";
+    private long lastNetworkLineTicks;
 
     private readonly ILogOutput logOutput;
     private readonly ILogFormat logFormat;
     private readonly IProcessManager processManager;
+
+    /// <summary>Which FFXIV_ACT_Plugin call the scan thread is inside; names the culprit when it stops.</summary>
+    public string ScanPhase => scanPhase;
+
+    /// <summary>Frame refreshes the scan thread has not consumed; grows without bound once it is dead.</summary>
+    public int PendingRefreshes => refreshSemaphore.CurrentCount;
+
+    public double SecondsSinceNetworkLine =>
+        lastNetworkLineTicks == 0 ? double.PositiveInfinity : (Environment.TickCount64 - lastNetworkLineTicks) / 1000.0;
 
     public DataCollectionSettingsEventArgs DataCollectionSettings = null!;
     public ParseSettings ParseSettings = null!;
@@ -244,6 +255,9 @@ public partial class FfxivActPluginWrapper : IDisposable
     {
         (logInfo.logLine, logInfo.detectedType) =
             parseMediator.BeforeLogLineRead(isImport, logInfo.detectedTime, logInfo.logLine);
+        var type = logInfo.detectedType > 0 ? logInfo.detectedType : LogLineTypes.TypeOf(logInfo.logLine) ?? 0;
+        if (LogLineTypes.IsNetworkType(type))
+            lastNetworkLineTicks = Environment.TickCount64;
     }
 
     private void SetupDataSubscription()
@@ -313,20 +327,30 @@ public partial class FfxivActPluginWrapper : IDisposable
         {
             try
             {
+                scanPhase = "waiting for a frame";
                 refreshSemaphore.Wait(token);
                 serverTimeProcessor.ServerTime = GameServerTime.CurrentServerTime;
 
                 var zoneId = zoneMapProcessor.ZoneID;
+                scanPhase = "zone refresh";
                 zoneMapProcessor.Refresh();
                 if (zoneMapProcessor.ZoneID == 0)
                     continue;
 
                 if (zoneId != zoneMapProcessor.ZoneID)
+                {
+                    scanPhase = "combatant rescan (zone changed)";
                     combatantManager.Rescan();
+                }
                 else
+                {
+                    scanPhase = "combatant refresh";
                     combatantManager.Refresh();
+                }
 
+                scanPhase = "player refresh";
                 playerProcessor.Refresh();
+                scanPhase = "party refresh";
                 partyProcessor.Refresh();
             }
             catch (Exception ex) when (ex is ThreadAbortException or OperationCanceledException or ObjectDisposedException)
