@@ -26,3 +26,21 @@ public class WsPortTests
         Assert.Equal(10501, new WsPortSource(() => 10501).Resolve());
     }
 }
+
+public class WsPortRebindTests
+{
+    [Fact]
+    public void A_server_on_the_wrong_port_rebinds_once_the_overlays_port_is_known()
+    {
+        Assert.True(WsPort.NeedsRebind(bound: 10501, fromOverlays: 10502));
+        Assert.False(WsPort.NeedsRebind(bound: 10502, fromOverlays: 10502));
+    }
+
+    [Fact]
+    public void Nothing_happens_without_an_overlays_port()
+    {
+        Assert.False(WsPort.NeedsRebind(bound: 10501, fromOverlays: null));
+        Assert.False(WsPort.NeedsRebind(bound: 10501, fromOverlays: 0));
+        Assert.False(WsPort.NeedsRebind(bound: null, fromOverlays: null));
+    }
+}
