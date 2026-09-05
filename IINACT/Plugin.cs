@@ -56,6 +56,7 @@ public sealed class Plugin : IDalamudPlugin
     private long lastHeartbeat;
     private double combatSince = -1;
     private bool restartRequested;
+    private volatile bool startupSettled;
 
     public Plugin(IDalamudPluginInterface pluginInterface,
                   ICommandManager commandManager,
@@ -120,7 +121,8 @@ public sealed class Plugin : IDalamudPlugin
 
         IpcProviders = new IpcProviders(PluginInterface)
         {
-            Healthy = () => ParserWatchdog.Evaluate(Sample()) == StallKind.None,
+            // Not healthy until the start-up follow-ups ran, so a caller waiting on it prints last.
+            Healthy = () => startupSettled && ParserWatchdog.Evaluate(Sample()) == StallKind.None,
             Status = () => FfxivActPluginWrapper.Summary(),
             Restart = reason =>
             {
@@ -248,6 +250,7 @@ public sealed class Plugin : IDalamudPlugin
             MainWindow.OverlayPluginConfig = container.Resolve<RainbowMage.OverlayPlugin.IPluginConfig>();
             MainWindow.OverlayPluginEventConfig = container.Resolve<RainbowMage.OverlayPlugin.EventSources.BuiltinEventConfig>();
             RefreshOverlayPagesIfMidSession();
+            startupSettled = true;
         });
 
         return overlayPlugin;
