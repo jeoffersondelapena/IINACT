@@ -247,6 +247,7 @@ public sealed class Plugin : IDalamudPlugin
             IpcProviders.OverlayIpcHandler = container.Resolve<RainbowMage.OverlayPlugin.Handlers.Ipc.IpcHandlerController>();
             MainWindow.OverlayPluginConfig = container.Resolve<RainbowMage.OverlayPlugin.IPluginConfig>();
             MainWindow.OverlayPluginEventConfig = container.Resolve<RainbowMage.OverlayPlugin.EventSources.BuiltinEventConfig>();
+            RefreshOverlayPagesIfMidSession();
         });
 
         return overlayPlugin;
@@ -323,6 +324,29 @@ public sealed class Plugin : IDalamudPlugin
     internal void SetChatMessageLoggingEnabled(bool enabled)
     {
         FfxivActPluginWrapper.SetChatMessageLoggingEnabled(enabled);
+    }
+
+    // A meter page that lost the websocket while the parser was away does not re-subscribe when it
+    // returns; at a cold boot the pages load after the server anyway.
+    private void RefreshOverlayPagesIfMidSession()
+    {
+        if (!ClientState.IsLoggedIn)
+            return;
+        Thread.Sleep(2000);
+        try
+        {
+            var reload = PluginInterface.GetIpcSubscriber<bool>("Browsingway.ReloadOverlays");
+            Diag?.Write(reload.InvokeFunc() ? "asked Browsingway to reload the overlay pages" : "Browsingway declined to reload the overlay pages");
+        }
+        catch (Dalamud.Plugin.Ipc.Exceptions.IpcNotReadyError)
+        {
+            Diag?.Write("Browsingway is not loaded; overlay pages not reloaded");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "overlay page reload failed");
+            Diag?.Write($"overlay page reload failed: {ex.Message}");
+        }
     }
 
     private void WatchdogTick(IFramework framework)
