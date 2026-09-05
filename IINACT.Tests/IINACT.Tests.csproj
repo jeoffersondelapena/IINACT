@@ -17,6 +17,7 @@
 		<Compile Include="..\OverlayPlugin.Core\IEventReceiver.cs" Link="OverlayPlugin\IEventReceiver.cs" />
 		<Compile Include="..\OverlayPlugin.Core\EventSources\CactbotStateEvents.cs" Link="OverlayPlugin\CactbotStateEvents.cs" />
 		<Compile Include="..\OverlayPlugin.Core\EventSources\StartupReplay.cs" Link="OverlayPlugin\StartupReplay.cs" />
+		<Compile Include="..\OverlayPlugin.Core\WebSocket\WsPort.cs" Link="OverlayPlugin\WsPort.cs" />
 		<Compile Include="..\OverlayPlugin.Common\ILogger.cs" Link="OverlayPlugin\ILogger.cs" />
 	</ItemGroup>
 

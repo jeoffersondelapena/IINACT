@@ -68,8 +68,10 @@ public class ServerController
             // var secure = _cfg.WSServerSSL && File.Exists(sslPath);
 
             var address = Config.WSServerIP == "*" ? IPAddress.Any : IPAddress.Parse(Config.WSServerIP);
+            var fromOverlays = Container.TryResolve<WsPortSource>(out var source) ? source.Resolve() : null;
+            Logger.Log(LogLevel.Info, "WSServer: " + WsPort.Describe(fromOverlays, Config.WSServerPort));
 
-            Server = new OverlayServer(address, Config.WSServerPort, Container);
+            Server = new OverlayServer(address, WsPort.Choose(fromOverlays, Config.WSServerPort), Container);
             Server.OptionReuseAddress = true;
             
             Server.Start();
