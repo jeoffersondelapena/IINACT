@@ -69,17 +69,13 @@ public class CactbotEventSource : EventSourceBase
         RegisterEventTypes(new List<string>()
         {
             "onForceReload",
-            "onGameExistsEvent",
-            "onGameActiveChangedEvent",
             "onLogEvent",
             "onImportLogEvent",
-            "onInCombatChangedEvent",
-            "onZoneChangedEvent",
             "onPlayerDied",
             "onPartyWipe",
-            "onPlayerChangedEvent",
             "onUserFileChanged",
         });
+        RegisterCachedEventTypes(CactbotStateEvents.Names);
 
         // Broadcast onConfigChanged when a cactbotNotifyConfigChanged message occurs.
         RegisterEventHandler("cactbotReloadOverlays", (_) =>
@@ -302,7 +298,10 @@ public class CactbotEventSource : EventSourceBase
             ["type"] = detail.EventName(),
             ["detail"] = JObject.FromObject(detail)
         };
-        DispatchEvent(ev);
+        if (CactbotStateEvents.IsState(detail.EventName()))
+            DispatchAndCacheEvent(ev);
+        else
+            DispatchEvent(ev);
     }
 
     // Events that we want to update as soon as possible.  Return next time this should be called.
