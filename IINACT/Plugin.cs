@@ -208,7 +208,9 @@ public sealed class Plugin : IDalamudPlugin
         ZoneDownHookManager.Dispose();
         
         FfxivActPluginWrapper.Dispose();
+        Diag?.Write("parser stopped");
         OverlayPlugin.DeInitPlugin();
+        Diag?.Write("overlay plugin stopped");
         Trace.Listeners.Remove(PluginLogTraceListener);
 
         WindowSystem.RemoveAllWindows();

@@ -177,10 +177,28 @@ public partial class FfxivActPluginWrapper : IDisposable
         framework.Update -= MobDataRefresh;
         SetChatMessageLoggingEnabled(false);
         ActGlobals.oFormActMain.BeforeLogLineRead -= OFormActMain_BeforeLogLineRead;
-        ffxivActPlugin.DeInitPlugin();
-        ffxivActPlugin.Dispose();
-        Marshal.FreeHGlobal(mobData);
+        // The parser's shutdown waits for its own threads; on 2026-09-30 one was stuck and the wait froze the game mid-duty.
+        var teardown = Task.Run(() =>
+        {
+            ffxivActPlugin.DeInitPlugin();
+            ffxivActPlugin.Dispose();
+        });
+        try
+        {
+            if (teardown.Wait(TeardownTimeout))
+            {
+                Marshal.FreeHGlobal(mobData);
+                return;
+            }
+            Plugin.Diag?.Write($"parser shutdown still running after {TeardownTimeout.TotalSeconds:F0}s; left behind so the frame loop goes on");
+        }
+        catch (AggregateException ex)
+        {
+            Plugin.Diag?.Write($"parser shutdown failed: {ex.InnerException?.GetType().Name}: {ex.InnerException?.Message}");
+        }
     }
+
+    private static readonly TimeSpan TeardownTimeout = TimeSpan.FromSeconds(3);
 
     public void SetChatMessageLoggingEnabled(bool enabled)
     {
