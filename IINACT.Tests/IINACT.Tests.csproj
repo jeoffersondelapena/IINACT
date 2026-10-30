@@ -13,6 +13,7 @@
 		<Compile Include="..\IINACT\ParserWatchdog.cs" Link="ParserWatchdog.cs" />
 		<Compile Include="..\IINACT\LogLineTypes.cs" Link="LogLineTypes.cs" />
 		<Compile Include="..\IINACT\DiagLog.cs" Link="DiagLog.cs" />
+		<Compile Include="..\NotACT\LogFileNaming.cs" Link="NotACT\LogFileNaming.cs" />
 		<Compile Include="..\OverlayPlugin.Core\EventDispatcher.cs" Link="OverlayPlugin\EventDispatcher.cs" />
 		<Compile Include="..\OverlayPlugin.Core\IEventReceiver.cs" Link="OverlayPlugin\IEventReceiver.cs" />
 		<Compile Include="..\OverlayPlugin.Core\EventSources\CactbotStateEvents.cs" Link="OverlayPlugin\CactbotStateEvents.cs" />

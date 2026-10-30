@@ -370,7 +370,8 @@ public partial class FormActMain : Form, ISynchronizeInvoke
     {
         try
         {
-            using var stream = new FileStream(LogFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            using var stream = new FileStream(LogFileNaming.PerWindow(LogFilePath, Environment.ProcessId), FileMode.Append,
+                                              FileAccess.Write, FileShare.ReadWrite);
             using var outputWriter = new StreamWriter(stream);
             while (pluginActive)
             {
