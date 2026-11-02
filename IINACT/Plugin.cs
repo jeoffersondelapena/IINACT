@@ -56,6 +56,7 @@ public sealed class Plugin : IDalamudPlugin
     private long lastHeartbeat;
     private double combatSince = -1;
     private bool restartRequested;
+    private long restartRequestedAt;
     private volatile bool startupSettled;
     private int rebinding;
 
@@ -431,6 +432,13 @@ public sealed class Plugin : IDalamudPlugin
             Diag?.Write($"heartbeat: {FfxivActPluginWrapper.Summary()}; in combat {inCombat}; territory {ClientState.TerritoryType}");
         }
 
+        if (restartRequested && ParserWatchdog.RestartOverdue((now - restartRequestedAt) / 1000.0))
+        {
+            restartRequested = false;
+            Diag?.Write($"restart gave up: the plugin reload did not complete within {ParserWatchdog.RestartTimeoutSeconds:F0} s");
+            Log.Warning("[Watchdog] the plugin reload did not complete; the next stall or /doctor fix will try again");
+        }
+
         var kind = ParserWatchdog.Evaluate(sample);
         if (kind == StallKind.None || !Configuration.AutoRestart || restartRequested)
             return;
@@ -462,16 +470,19 @@ public sealed class Plugin : IDalamudPlugin
     private void RestartParser(string reason)
     {
         restartRequested = true;
+        restartRequestedAt = Environment.TickCount64;
         Diag?.Write($"restart requested: {reason}");
         ChatGui.Print($"IINACT: parser stalled ({reason}) - restarting.");
         Configuration.LastAutoRestart = DateTime.UtcNow;
         Configuration.LastRestartReason = reason;
         Configuration.Save();
-        Task.Run(async () =>
+        // A thread of its own: a Task.Run reload never started on 2026-11-02, with no error to show for it.
+        var worker = new Thread(() =>
         {
+            Diag?.Write("restart running");
             try
             {
-                await PluginReloader.Reload(PluginInterface, "IINACT");
+                PluginReloader.Reload(PluginInterface, "IINACT").GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
@@ -489,7 +500,8 @@ public sealed class Plugin : IDalamudPlugin
                     // The plugin may already be half unloaded; the log line above is what survives.
                 }
             }
-        });
+        }) { IsBackground = true, Name = "IINACT restart" };
+        worker.Start();
     }
 
     private void AnnounceRestart()
