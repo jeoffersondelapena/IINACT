@@ -124,4 +124,11 @@ public class LogLineTypesTests
         Assert.Null(LogLineTypes.TypeOf("[broken"));
         Assert.Null(LogLineTypes.TypeOf("1234|too long"));
     }
+
+    [Fact]
+    public void A_reload_that_never_comes_back_is_given_up_on()
+    {
+        Assert.False(ParserWatchdog.RestartOverdue(ParserWatchdog.RestartTimeoutSeconds - 1));
+        Assert.True(ParserWatchdog.RestartOverdue(ParserWatchdog.RestartTimeoutSeconds + 1));
+    }
 }

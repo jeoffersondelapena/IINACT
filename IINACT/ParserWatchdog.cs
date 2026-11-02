@@ -27,6 +27,8 @@ public static class ParserWatchdog
 
     // Covers start-up and the reload itself, so a parser that is still coming up is never judged.
     public const double StartupGraceSeconds = 90;
+    // A reload not back by then never ran (2026-11-02); the request is dropped so a later one can try.
+    public const double RestartTimeoutSeconds = 45;
 
     public static StallKind Evaluate(in WatchdogSample s)
     {
@@ -38,6 +40,8 @@ public static class ParserWatchdog
             return StallKind.NoCombatData;
         return StallKind.None;
     }
+
+    public static bool RestartOverdue(double secondsSinceRequest) => secondsSinceRequest > RestartTimeoutSeconds;
 
     public static string Describe(StallKind kind, string scanPhase) => kind switch
     {
