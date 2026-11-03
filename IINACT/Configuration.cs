@@ -40,16 +40,31 @@ public class Configuration : IPluginConfiguration
         set => logFilePath = value;
     }
 
+    private bool writeLogFile = true;
+    private bool disableWritingPvpLogFile;
+
+    // ActGlobals is gone between an unload and the next load; a save in that window (the failed reload of
+    // 2026-11-03 crashed the game through this getter) falls back to the last value seen.
     public bool WriteLogFile
     {
-        get => Advanced_Combat_Tracker.ActGlobals.oFormActMain.WriteLogFile;
-        set => Advanced_Combat_Tracker.ActGlobals.oFormActMain.WriteLogFile = value;
+        get => Advanced_Combat_Tracker.ActGlobals.oFormActMain?.WriteLogFile ?? writeLogFile;
+        set
+        {
+            writeLogFile = value;
+            if (Advanced_Combat_Tracker.ActGlobals.oFormActMain is { } main)
+                main.WriteLogFile = value;
+        }
     }
 
     public bool DisableWritingPvpLogFile
     {
-        get => Advanced_Combat_Tracker.ActGlobals.oFormActMain.DisableWritingPvpLogFile;
-        set => Advanced_Combat_Tracker.ActGlobals.oFormActMain.DisableWritingPvpLogFile = value;
+        get => Advanced_Combat_Tracker.ActGlobals.oFormActMain?.DisableWritingPvpLogFile ?? disableWritingPvpLogFile;
+        set
+        {
+            disableWritingPvpLogFile = value;
+            if (Advanced_Combat_Tracker.ActGlobals.oFormActMain is { } main)
+                main.DisableWritingPvpLogFile = value;
+        }
     }
 
     public string PlayerCharacterName
