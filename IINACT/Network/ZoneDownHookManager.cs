@@ -247,7 +247,7 @@ public unsafe class ZoneDownHookManager : IDisposable
         var path = Environment.ProcessPath!;
         var parent = Directory.GetParent(path)!.FullName;
         var ffxivVerFile = Path.Combine(parent, "ffxivgame.ver");
-        return File.Exists(ffxivVerFile) ? File.ReadAllText(ffxivVerFile) : "0000.00.00.0000.0000";
+        return File.Exists(ffxivVerFile) ? VersionFile.Read(() => File.ReadAllText(ffxivVerFile)) : VersionFile.Unknown;
     }
     
     public static VersionConstants GetFallbackVersionConstant(uint opcodeKeyTableOffset, int opcodeKeyTableSize)

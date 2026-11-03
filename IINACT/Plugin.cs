@@ -486,13 +486,13 @@ public sealed class Plugin : IDalamudPlugin
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "[Watchdog] reload failed");
-                Diag?.Write($"restart FAILED: {ex.GetType().Name}: {ex.Message}");
-                restartRequested = false;
-                Configuration.LastAutoRestart = null;
-                Configuration.Save();
+                // Nothing may escape this thread: an exception here is unhandled and takes the game down (2026-11-03).
                 try
                 {
+                    Log.Error(ex, "[Watchdog] reload failed");
+                    Diag?.Write($"restart FAILED: {ex.GetType().Name}: {ex.Message}");
+                    restartRequested = false;
+                    Configuration.LastAutoRestart = null;
                     ChatGui.PrintError("IINACT: automatic restart failed - run /xldisableplugintemp IINACT, then /xlenableplugintemp IINACT.");
                 }
                 catch (Exception)
